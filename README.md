@@ -21,15 +21,6 @@ snake_game/
 - Miniconda / Anaconda
 - pygame 2.5+
 
-## 安装步骤
-
-```bash
-# 1. 创建 Conda 环境
-conda create --prefix ./env python=3.9 -y
-
-# 2. 安装依赖
-env\python.exe -m pip install pygame
-```
 
 ## 运行方式
 
