@@ -2,6 +2,164 @@ import pygame
 import random
 import os
 
+
+class AudioManager:
+    """音效管理器"""
+    def __init__(self):
+        self.enabled = False
+        self.bg_music_path = None
+        self.eat_sound_path = None
+        self.game_over_sound_path = None
+        self._check_assets()
+    
+    def _check_assets(self):
+        """检查 assets 目录下的音乐文件"""
+        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
+        if not os.path.exists(assets_dir):
+            return
+        
+        # 支持的音频格式
+        exts = ['.mp3', '.wav', '.ogg']
+        
+        # 查找背景音乐
+        for name in ['bgm', 'background', 'music', 'theme']:
+            for ext in exts:
+                path = os.path.join(assets_dir, f'{name}{ext}')
+                if os.path.exists(path):
+                    self.bg_music_path = path
+                    break
+            if self.bg_music_path:
+                break
+        
+        # 查找吃食物音效
+        for name in ['eat', 'eat_food', 'coin', 'pickup']:
+            for ext in exts:
+                path = os.path.join(assets_dir, f'{name}{ext}')
+                if os.path.exists(path):
+                    self.eat_sound_path = path
+                    break
+            if self.eat_sound_path:
+                break
+        
+        # 查找游戏结束音效
+        for name in ['gameover', 'game_over', 'die', 'fail']:
+            for ext in exts:
+                path = os.path.join(assets_dir, f'{name}{ext}')
+                if os.path.exists(path):
+                    self.game_over_sound_path = path
+                    break
+            if self.game_over_sound_path:
+                break
+    
+    def init_audio(self):
+        """初始化音频系统"""
+        try:
+            pygame.mixer.init()
+            self.enabled = True
+        except Exception:
+            self.enabled = False
+    
+    def play_bg_music(self, loops=-1, volume=0.5):
+        """播放背景音乐"""
+        if not self.enabled or not self.bg_music_path:
+            print(f"[Audio] 无法播放: enabled={self.enabled}, path={self.bg_music_path}")
+            return
+        try:
+            pygame.mixer.music.load(self.bg_music_path)
+            pygame.mixer.music.set_volume(volume)
+            pygame.mixer.music.play(loops)
+            print(f"[Audio] 开始播放背景音乐: {self.bg_music_path}")
+        except Exception as e:
+            print(f"[Audio] 播放失败: {e}")
+            # 尝试用 Sound 方式播放
+            try:
+                sound = pygame.mixer.Sound(self.bg_music_path)
+                sound.set_volume(volume)
+                sound.play(loops)
+                print("[Audio] 使用 Sound 方式播放成功")
+            except Exception as e2:
+                print(f"[Audio] Sound 方式也失败: {e2}")
+    
+    def stop_bg_music(self):
+        """停止背景音乐"""
+        if not self.enabled:
+            return
+        try:
+            pygame.mixer.music.stop()
+        except Exception:
+            pass
+    
+    def pause_bg_music(self):
+        """暂停背景音乐"""
+        if not self.enabled:
+            return
+        try:
+            pygame.mixer.music.pause()
+        except Exception:
+            pass
+    
+    def resume_bg_music(self):
+        """恢复背景音乐"""
+        if not self.enabled:
+            return
+        try:
+            pygame.mixer.music.unpause()
+        except Exception:
+            pass
+    
+    def _generate_beep(self, frequency, duration, volume=0.5):
+        """生成简单蜂鸣音效"""
+        try:
+            sample_rate = 44100
+            samples = int(sample_rate * duration)
+            buf = bytearray()
+            import math
+            for i in range(samples):
+                t = i / sample_rate
+                # 正弦波 + 衰减
+                val = int(127 + 127 * math.sin(2 * math.pi * frequency * t) * (1 - i / samples))
+                buf.append(val)
+            sound = pygame.mixer.Sound(buffer=bytes(buf))
+            sound.set_volume(volume)
+            return sound
+        except Exception:
+            return None
+    
+    def play_eat_sound(self, volume=0.6, max_duration=500):
+        """播放吃食物音效（使用文件或生成），限制最大播放时长(毫秒)"""
+        if not self.enabled:
+            return
+        try:
+            if self.eat_sound_path:
+                sound = pygame.mixer.Sound(self.eat_sound_path)
+                sound.set_volume(volume)
+                # 限制播放时长
+                channel = sound.play(maxtime=max_duration)
+            else:
+                # 生成清脆的"叮"声（短促）
+                sound = self._generate_beep(880, 0.08, volume)
+                if sound:
+                    sound.play()
+        except Exception:
+            pass
+    
+    def play_game_over_sound(self, volume=0.7):
+        """播放游戏结束音效（使用文件或生成）"""
+        if not self.enabled:
+            return
+        try:
+            if self.game_over_sound_path:
+                sound = pygame.mixer.Sound(self.game_over_sound_path)
+                sound.set_volume(volume)
+                sound.play()
+            else:
+                # 生成低沉的"咚"声
+                sound = self._generate_beep(220, 0.4, volume)
+                if sound:
+                    sound.play()
+        except Exception:
+            pass
+
 # 游戏配置
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 620
@@ -28,6 +186,11 @@ SNAKE_PUPIL  = (0,     0,   0)
 FOOD_COLOR   = (255,  60,  80)
 FOOD_SHINE   = (255, 160, 170)
 FOOD_STEM    = (120,  60,  20)
+
+# 炸弹
+BOMB_COLOR   = (100,  60,  70)   # 炸弹主体（偏红）
+BOMB_FUSE    = (255,  80,  40)   # 引线火焰
+BOMB_SPARK   = (255, 200,  50)   # 火花
 
 # UI 文字
 TITLE_COLOR  = (80,  200, 130)
@@ -195,12 +358,92 @@ class Food:
         pygame.draw.rect(screen, FOOD_STEM, stem_rect, border_radius=1)
 
 
+class Bomb:
+    """炸弹 - 蛇碰到会游戏结束，一段时间后会自动消失"""
+    def __init__(self, lifetime=180):  # 默认3秒消失 (60fps * 3)
+        self.pos = Point(0, 0)
+        self.lifetime = lifetime
+        self._tick = 0
+        self._glow_tick = 0
+        self.active = True
+
+    def randomize(self, exclude=None):
+        """随机位置，排除 exclude 列表中的点"""
+        exclude = exclude or []
+        while True:
+            p = Point(random.randint(0, CELL_NUMBER_X - 1),
+                      random.randint(0, CELL_NUMBER_Y - 1))
+            if p not in exclude:
+                self.pos = p
+                break
+
+    def update(self):
+        """更新炸弹状态，返回是否还存活"""
+        if not self.active:
+            return False
+        self._tick += 1
+        self._glow_tick = (self._glow_tick + 1) % 30
+        if self._tick >= self.lifetime:
+            self.active = False
+            return False
+        return True
+
+    def draw_bomb(self, screen):
+        """绘制炸弹"""
+        if not self.active:
+            return
+
+        cx = self.pos.x * CELL_SIZE + CELL_SIZE // 2
+        cy = self.pos.y * CELL_SIZE + CELL_SIZE // 2
+        r = CELL_SIZE // 2 - 2
+
+        # 倒计时闪烁效果（快消失时闪烁更快）
+        remaining = self.lifetime - self._tick
+        flash_speed = 10 if remaining > 60 else 5 if remaining > 30 else 2
+        is_visible = (self._tick // flash_speed) % 2 == 0
+
+        # 外圈警告光环（红色）
+        if is_visible:
+            glow_surf = pygame.Surface((CELL_SIZE * 3, CELL_SIZE * 3), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (255, 0, 0, 60),
+                              (CELL_SIZE * 1.5, CELL_SIZE * 1.5), r + 6)
+            screen.blit(glow_surf, (cx - CELL_SIZE * 1.5, cy - CELL_SIZE * 1.5))
+
+        # 光晕
+        glow_surf = pygame.Surface((CELL_SIZE * 2, CELL_SIZE * 2), pygame.SRCALPHA)
+        glow_r = int(4 + 3 * abs(15 - self._glow_tick) / 15)
+        pygame.draw.circle(glow_surf, (*BOMB_FUSE, 50),
+                          (CELL_SIZE, CELL_SIZE), r + glow_r + 2)
+        screen.blit(glow_surf, (cx - CELL_SIZE, cy - CELL_SIZE))
+
+        # 炸弹主体（圆形）- 深红色
+        pygame.draw.circle(screen, BOMB_COLOR, (cx, cy), r)
+        # 边框
+        pygame.draw.circle(screen, (150, 80, 90), (cx, cy), r, 2)
+        # 高光
+        pygame.draw.circle(screen, (140, 100, 110),
+                          (cx - r // 3, cy - r // 3), max(3, r // 3))
+
+        # 引线
+        fuse_end = (cx + r // 2 - 2, cy - r // 2 + 2)
+        pygame.draw.line(screen, (180, 180, 180), (cx + 2, cy - 2), fuse_end, 2)
+
+        # 火焰（闪烁）
+        if is_visible:
+            pygame.draw.circle(screen, BOMB_FUSE, fuse_end, 5)
+            pygame.draw.circle(screen, BOMB_SPARK, fuse_end, 3)
+            pygame.draw.circle(screen, (255, 255, 200), fuse_end, 1)
+
+
 class Game:
     """游戏主类"""
     def __init__(self):
         self.snake = Snake()
         self.food = Food()
         self.food.randomize(self.snake.body)
+        self.bomb = None           # 当前炸弹
+        self.bomb_timer = 0        # 炸弹生成计时器
+        self.bomb_interval = 180   # 每3秒生成一个炸弹 (60fps * 3)
         self.score = 0
         self.high_score = 0
         self.font = None
@@ -239,6 +482,7 @@ class Game:
             return
         self.snake.move_snake()
         self._check_eat()
+        self._update_bomb()
         self._check_fail()
         self._frame += 1
 
@@ -249,10 +493,42 @@ class Game:
             if self.score > self.high_score:
                 self.high_score = self.score
             self.food.randomize(self.snake.body)
+            # 播放吃食物音效
+            if hasattr(self, 'audio') and self.audio:
+                self.audio.play_eat_sound()
+
+    def _update_bomb(self):
+        """更新炸弹逻辑：生成、消失、碰撞检测"""
+        # 更新现有炸弹
+        if self.bomb:
+            alive = self.bomb.update()
+            if not alive:
+                self.bomb = None
+
+        # 生成新炸弹
+        if self.bomb is None:
+            self.bomb_timer += 1
+            if self.bomb_timer >= self.bomb_interval:
+                self.bomb_timer = 0
+                self.bomb = Bomb()
+                # 排除蛇身和食物位置
+                exclude = list(self.snake.body) + [self.food.pos]
+                self.bomb.randomize(exclude)
+
+    def _check_bomb_collision(self):
+        """检查是否碰到炸弹"""
+        if self.bomb and self.bomb.active:
+            if self.snake.body[0] == self.bomb.pos:
+                return True
+        return False
 
     def _check_fail(self):
-        if self.snake.check_wall_collision() or self.snake.check_self_collision():
+        if self.snake.check_wall_collision() or self.snake.check_self_collision() or self._check_bomb_collision():
             self.game_over_flag = True
+            # 播放游戏结束音效并停止背景音乐
+            if hasattr(self, 'audio') and self.audio:
+                self.audio.stop_bg_music()
+                self.audio.play_game_over_sound()
 
     # ── 控制 ──────────────────────────────────────────────
     def update_direction(self, direction):
@@ -271,6 +547,8 @@ class Game:
     def restart(self):
         self.snake = Snake()
         self.food.randomize(self.snake.body)
+        self.bomb = None
+        self.bomb_timer = 0
         self.score = 0
         self.game_over_flag = False
         self.paused = False
@@ -295,6 +573,8 @@ class Game:
         self._draw_grid(screen)
 
         self.food.draw_food(screen)
+        if self.bomb:
+            self.bomb.draw_bomb(screen)
         self.snake.draw_snake(screen)
         self._draw_status_bar(screen)
 

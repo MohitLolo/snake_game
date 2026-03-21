@@ -1,7 +1,7 @@
 import pygame
 import sys
 import ctypes
-from snake import Game, Point, WINDOW_WIDTH, WINDOW_HEIGHT, SPEED_MAP
+from snake import Game, Point, WINDOW_WIDTH, WINDOW_HEIGHT, SPEED_MAP, AudioManager
 
 
 def disable_ime(hwnd):
@@ -22,8 +22,13 @@ def main():
     pygame.display.set_caption("贪吃蛇")
     clock = pygame.time.Clock()
 
+    # 初始化音效系统
+    audio = AudioManager()
+    audio.init_audio()
+
     game = Game()
     game.init_fonts()
+    game.audio = audio  # 将音效管理器传递给游戏对象
 
     # 禁用 IME，确保 WASD 任意输入法状态下都能正常接收
     hwnd = pygame.display.get_wm_info().get('window', 0)
@@ -65,6 +70,8 @@ def main():
                     # 开始界面：空格开始，1/2/3 切换难度
                     if event.key == pygame.K_SPACE:
                         game_started = True
+                        audio.stop_bg_music()  # 先停止之前的音乐
+                        audio.play_bg_music()  # 开始播放背景音乐
                     elif event.key in (pygame.K_1, pygame.K_KP1):
                         game.set_difficulty(1)
                         pygame.time.set_timer(SCREEN_UPDATE, game.speed)
@@ -86,12 +93,19 @@ def main():
                             game.restart()
                             pygame.time.set_timer(SCREEN_UPDATE, game.speed)
                             current_timer_speed = game.speed
+                            audio.stop_bg_music()  # 先停止之前的音乐
+                            audio.play_bg_music()  # 重新开始时播放背景音乐
                         else:
                             game.toggle_pause()
+                            if game.paused:
+                                audio.pause_bg_music()
+                            else:
+                                audio.resume_bg_music()
                     elif event.key == pygame.K_ESCAPE:
                         # ESC 返回开始界面
                         game.restart()
                         game_started = False
+                        audio.stop_bg_music()  # 停止背景音乐
 
         # WASD 轮询检测（同时检测大小写，绕开输入法拦截）
         if game_started and not game.game_over_flag:
