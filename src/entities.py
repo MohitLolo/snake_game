@@ -6,7 +6,7 @@ import random
 import pygame
 from .config import (
     CELL_SIZE, CELL_NUMBER_X, CELL_NUMBER_Y, 
-    COLORS, BOMB_CONFIG
+    COLORS, BOMB_CONFIG, RED_SNAKE_CONFIG
 )
 from .utils import Point
 
@@ -296,3 +296,131 @@ class Bomb:
         pygame.draw.circle(surf, (255, 200, 0, alpha), (CELL_SIZE * 1.5, CELL_SIZE * 1.5), center_r // 2)
         pygame.draw.circle(surf, (255, 255, 255, alpha), (CELL_SIZE * 1.5, CELL_SIZE * 1.5), center_r // 4)
         screen.blit(surf, (cx - CELL_SIZE * 1.5, cy - CELL_SIZE * 1.5))
+
+
+class RedSnake:
+    """红蛇 - 敌对蛇，碰到边界或绿蛇身体死亡，变成经验球"""
+    
+    def __init__(self, start_pos=None, length=None):
+        if start_pos is None:
+            # 随机生成在远离绿蛇的位置
+            start_pos = self._random_spawn_pos()
+        
+        if length is None:
+            length = random.randint(RED_SNAKE_CONFIG['min_length'], 
+                                   RED_SNAKE_CONFIG['max_length'])
+        
+        # 初始化身体
+        self.body = [Point(start_pos.x - i, start_pos.y) for i in range(length)]
+        self.direction = Point(1, 0)  # 初始向右
+        self.alive = True
+        self._move_timer = 0
+    
+    def _random_spawn_pos(self):
+        """随机生成位置（远离边界）"""
+        return Point(
+            random.randint(5, CELL_NUMBER_X - 6),
+            random.randint(5, CELL_NUMBER_Y - 6)
+        )
+    
+    def update(self, green_snake_body):
+        """更新红蛇状态，返回是否还存活"""
+        if not self.alive:
+            return False
+        
+        self._move_timer += 1
+        if self._move_timer >= RED_SNAKE_CONFIG['speed'] // 20:  # 根据速度调整
+            self._move_timer = 0
+            self._auto_move(green_snake_body)
+        
+        # 检查死亡条件
+        if self._check_death(green_snake_body):
+            self.alive = False
+            return False
+        
+        return True
+    
+    def _auto_move(self, green_snake_body):
+        """自动移动（简单的随机转向）"""
+        head = self.body[0]
+        
+        # 随机决定是否转向
+        if random.random() < 0.3:
+            # 随机选择一个方向
+            directions = [Point(0, -1), Point(0, 1), Point(-1, 0), Point(1, 0)]
+            # 排除反向
+            valid_dirs = [d for d in directions 
+                         if not (d.x == -self.direction.x and d.y == -self.direction.y)]
+            if valid_dirs:
+                self.direction = random.choice(valid_dirs)
+        
+        # 移动
+        new_head = Point(head.x + self.direction.x, head.y + self.direction.y)
+        self.body = [new_head] + self.body[:-1]
+    
+    def _check_death(self, green_snake_body):
+        """检查是否死亡（撞墙或撞到绿蛇身体）"""
+        head = self.body[0]
+        
+        # 撞墙
+        if not (0 <= head.x < CELL_NUMBER_X and 0 <= head.y < CELL_NUMBER_Y):
+            return True
+        
+        # 撞到绿蛇身体（不包括头部）
+        if head in green_snake_body[1:]:
+            return True
+        
+        return False
+    
+    def get_exp_balls(self):
+        """死亡后变成经验球，每个身体段一个"""
+        return [ExpBall(pos=p) for p in self.body]
+    
+    def draw(self, screen):
+        """绘制红蛇"""
+        for i, block in enumerate(self.body):
+            x = block.x * CELL_SIZE
+            y = block.y * CELL_SIZE
+            rect = pygame.Rect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2)
+            
+            if i == 0:
+                # 蛇头
+                pygame.draw.rect(screen, COLORS['RED_SNAKE_HEAD'], rect, border_radius=6)
+            else:
+                # 蛇身
+                pygame.draw.rect(screen, COLORS['RED_SNAKE_BODY'], rect, border_radius=4)
+
+
+class ExpBall:
+    """经验球 - 绿蛇吃掉后快速变长"""
+    
+    def __init__(self, pos=None):
+        self.pos = pos or Point(0, 0)
+        self._glow_tick = 0
+        self.lifetime = 600  # 10秒后消失 (60fps * 10)
+        self._tick = 0
+    
+    def update(self):
+        """更新状态，返回是否还存活"""
+        self._tick += 1
+        self._glow_tick = (self._glow_tick + 1) % 30
+        return self._tick < self.lifetime
+    
+    def draw(self, screen):
+        """绘制经验球"""
+        cx = self.pos.x * CELL_SIZE + CELL_SIZE // 2
+        cy = self.pos.y * CELL_SIZE + CELL_SIZE // 2
+        r = CELL_SIZE // 2 - 2
+        
+        # 发光效果
+        glow_r = int(4 + 2 * abs(15 - self._glow_tick) / 15)
+        glow_surf = pygame.Surface((CELL_SIZE * 2, CELL_SIZE * 2), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, (*COLORS['EXP_BALL_GLOW'], 60),
+                          (CELL_SIZE, CELL_SIZE), r + glow_r + 3)
+        screen.blit(glow_surf, (cx - CELL_SIZE, cy - CELL_SIZE))
+        
+        # 主体
+        pygame.draw.circle(screen, COLORS['EXP_BALL'], (cx, cy), r)
+        # 高光
+        pygame.draw.circle(screen, COLORS['EXP_BALL_GLOW'],
+                          (cx - r // 3, cy - r // 3), max(2, r // 3))

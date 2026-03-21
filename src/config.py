@@ -26,6 +26,14 @@ BOMB_CONFIG = {
     'explosion_duration': 20  # 爆炸动画持续时间 (帧数)
 }
 
+# ========== 红蛇配置 ==========
+RED_SNAKE_CONFIG = {
+    'interval': 300,        # 生成间隔 (帧数, 60fps * 5秒)
+    'min_length': 3,        # 最小长度
+    'max_length': 8,        # 最大长度
+    'speed': 120,           # 红蛇移动速度 (ms)
+}
+
 # ========== 颜色配置 ==========
 COLORS = {
     # 基础
@@ -54,6 +62,14 @@ COLORS = {
     'BOMB': (100, 60, 70),
     'BOMB_FUSE': (255, 80, 40),
     'BOMB_SPARK': (255, 200, 50),
+    
+    # 红蛇
+    'RED_SNAKE_HEAD': (220, 50, 50),
+    'RED_SNAKE_BODY': (180, 40, 40),
+    
+    # 经验球
+    'EXP_BALL': (255, 215, 0),
+    'EXP_BALL_GLOW': (255, 255, 150),
     
     # UI
     'TITLE': (80, 200, 130),

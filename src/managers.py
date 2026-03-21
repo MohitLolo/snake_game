@@ -19,7 +19,9 @@ class AudioManager:
         self._music_playing = False
         self._music_started = False  # 是否已经开始播放过
         self._fade_frame = 0  # 淡入淡出进度
-        self._fade_mode = None  # 'in', 'out', None
+        self._fade_mode = None  # 'in', 'out', 'paused', None
+        self._sound_obj = None  # Sound 方式播放时的对象
+        self._use_sound_mode = False  # 是否使用 Sound 方式
         
         # 确定 assets 目录路径
         if assets_dir is None:
@@ -102,7 +104,10 @@ class AudioManager:
             self._fade_frame += 1
             progress = min(1.0, self._fade_frame / self.FADE_DURATION)
             volume = AUDIO_CONFIG['bg_volume'] * progress
-            pygame.mixer.music.set_volume(volume)
+            if self._use_sound_mode and self._sound_obj:
+                self._sound_obj.set_volume(volume)
+            else:
+                pygame.mixer.music.set_volume(volume)
             if progress >= 1.0:
                 self._fade_mode = None
         
@@ -110,10 +115,16 @@ class AudioManager:
             self._fade_frame += 1
             progress = min(1.0, self._fade_frame / self.FADE_DURATION)
             volume = AUDIO_CONFIG['bg_volume'] * (1 - progress)
-            pygame.mixer.music.set_volume(volume)
+            if self._use_sound_mode and self._sound_obj:
+                self._sound_obj.set_volume(volume)
+            else:
+                pygame.mixer.music.set_volume(volume)
             if progress >= 1.0:
-                pygame.mixer.music.pause()
-                self._fade_mode = None
+                if self._use_sound_mode and self._sound_obj:
+                    self._sound_obj.stop()
+                else:
+                    pygame.mixer.music.pause()
+                self._fade_mode = 'paused'  # 标记为已暂停
     
     def play_bg_music(self, loops=-1):
         """播放背景音乐（整个游戏周期只播放一次，循环使用）"""
@@ -127,7 +138,19 @@ class AudioManager:
             print("[Audio] 无背景音乐文件")
             return
         
-        # 如果已经在播放，不做任何操作（保持循环）
+        # 如果音乐暂停了（淡出后），恢复播放
+        if self._music_playing and self._fade_mode == 'paused':
+            print("[Audio] 恢复暂停的音乐")
+            if self._use_sound_mode and self._sound_obj:
+                self._sound_obj.play(-1)
+                self._sound_obj.set_volume(0)
+            else:
+                pygame.mixer.music.unpause()
+            self._fade_mode = 'in'
+            self._fade_frame = 0
+            return
+        
+        # 如果已经在播放，不做任何操作
         if self._music_playing:
             print("[Audio] 已经在播放中")
             return
@@ -139,6 +162,7 @@ class AudioManager:
             pygame.mixer.music.play(loops)
             self._music_playing = True
             self._music_started = True
+            self._use_sound_mode = False
             self._fade_mode = 'in'
             self._fade_frame = 0
             print("[Audio] BGM开始播放（淡入中）")
@@ -147,12 +171,14 @@ class AudioManager:
             print("[Audio] 尝试使用 Sound 方式播放...")
             try:
                 # 尝试用 Sound 方式播放
-                sound = pygame.mixer.Sound(self.bg_music_path)
-                sound.set_volume(AUDIO_CONFIG['bg_volume'])
-                # Sound 不能循环播放长音乐，需要特殊处理
-                sound.play(-1)  # 循环播放
+                self._sound_obj = pygame.mixer.Sound(self.bg_music_path)
+                self._sound_obj.set_volume(0)
+                self._sound_obj.play(-1)  # 循环播放
+                self._use_sound_mode = True
                 self._music_playing = True
                 self._music_started = True
+                self._fade_mode = 'in'
+                self._fade_frame = 0
                 print("[Audio] Sound方式播放成功")
             except Exception as e2:
                 print(f"[Audio] Sound方式也失败: {e2}")
@@ -173,6 +199,9 @@ class AudioManager:
     def resume_bg_music(self):
         """恢复背景音乐（渐入效果）"""
         if self.enabled and self._music_playing:
+            if self._use_sound_mode and self._sound_obj:
+                self._sound_obj.play(-1)
+                self._sound_obj.set_volume(0)
             self._fade_mode = 'in'
             self._fade_frame = 0
     

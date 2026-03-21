@@ -94,6 +94,8 @@ class GameApp:
         """更新游戏状态"""
         # 更新音频（处理淡入淡出）
         self.audio.update()
+        # 更新帧计数（用于动画）
+        self.game._frame += 1
     
     def _handle_events(self):
         """处理事件"""
@@ -126,6 +128,14 @@ class GameApp:
             self._set_difficulty(2)
         elif key in (pygame.K_3, pygame.K_KP3):
             self._set_difficulty(3)
+        elif key in (pygame.K_LEFT, pygame.K_a, 65):  # 65 是大写 A
+            # 左键：降低难度
+            new_level = max(1, self.game.difficulty - 1)
+            self._set_difficulty(new_level)
+        elif key in (pygame.K_RIGHT, pygame.K_d, 68):  # 68 是大写 D
+            # 右键：提高难度
+            new_level = min(3, self.game.difficulty + 1)
+            self._set_difficulty(new_level)
     
     def _handle_game_keys(self, key):
         """处理游戏按键"""
