@@ -239,6 +239,19 @@ class AudioManager:
                     sound.play()
         except Exception as e:
             print(f"[Audio] 游戏结束音效失败: {e}")
+    
+    def play_flashbang_sound(self):
+        """播放闪光弹音效"""
+        if not self.enabled:
+            return
+        try:
+            # 生成闪光弹音效（高频尖锐声音）
+            buf = generate_beep(44100, 2000, 0.15, 0.8)
+            if buf:
+                sound = pygame.mixer.Sound(buffer=buf)
+                sound.play()
+        except Exception as e:
+            print(f"[Audio] 闪光弹音效失败: {e}")
 
 
 class FontManager:

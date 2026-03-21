@@ -6,7 +6,8 @@ import random
 import pygame
 from .config import (
     CELL_SIZE, CELL_NUMBER_X, CELL_NUMBER_Y, 
-    COLORS, BOMB_CONFIG, RED_SNAKE_CONFIG
+    COLORS, BOMB_CONFIG, RED_SNAKE_CONFIG, YELLOW_SNAKE_CONFIG, BEGINNER_CONFIG,
+    WINDOW_WIDTH
 )
 from .utils import Point
 
@@ -14,7 +15,7 @@ from .utils import Point
 class Snake:
     """贪吃蛇实体"""
     
-    def __init__(self, start_pos=None):
+    def __init__(self, start_pos=None, beginner_mode=False):
         if start_pos is None:
             start_pos = Point(10, 14)
         
@@ -26,6 +27,17 @@ class Snake:
         self.direction = Point(1, 0)  # 初始向右
         self.new_block = False
         self._dir_queue = []
+        
+        # 新手模式：平滑移动
+        self.beginner_mode = beginner_mode
+        self.smooth_body = []  # 像素级别的位置列表 [(x, y), ...]
+        self._init_smooth_body()
+    
+    def _init_smooth_body(self):
+        """初始化平滑位置"""
+        self.smooth_body = [(block.x * CELL_SIZE + CELL_SIZE // 2,
+                            block.y * CELL_SIZE + CELL_SIZE // 2)
+                           for block in self.body]
     
     def move(self):
         """移动蛇"""
@@ -44,6 +56,76 @@ class Snake:
     def grow(self):
         """增长"""
         self.new_block = True
+        # 新手模式：在平滑位置列表末尾添加一个位置
+        if self.beginner_mode and self.smooth_body:
+            self.smooth_body.append(self.smooth_body[-1])
+    
+    def move_to_mouse(self, mouse_x, mouse_y, speed=None):
+        """新手模式：向鼠标位置移动（平滑移动）"""
+        if not self.beginner_mode:
+            return
+        
+        import math
+        
+        # 获取蛇头位置
+        head_x, head_y = self.smooth_body[0]
+        
+        # 计算到鼠标的距离和方向
+        dx = mouse_x - head_x
+        dy = mouse_y - head_y
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # 如果距离太小，不移动
+        if distance < BEGINNER_CONFIG['min_distance']:
+            return
+        
+        # 计算移动方向（归一化）
+        if speed is None:
+            speed = BEGINNER_CONFIG['snake_speed']
+        move_x = (dx / distance) * speed
+        move_y = (dy / distance) * speed
+        
+        # 更新方向（用于绘制眼睛）
+        if abs(dx) > abs(dy):
+            self.direction = Point(1, 0) if dx > 0 else Point(-1, 0)
+        else:
+            self.direction = Point(0, 1) if dy > 0 else Point(0, -1)
+        
+        # 计算新头部位置
+        new_head_x = head_x + move_x
+        new_head_y = head_y + move_y
+        
+        # 更新平滑位置列表
+        # 每个身体段跟随前一个段
+        new_smooth_body = [(new_head_x, new_head_y)]
+        for i in range(1, len(self.smooth_body)):
+            prev_x, prev_y = new_smooth_body[i - 1]
+            curr_x, curr_y = self.smooth_body[i]
+            
+            # 计算到前一段的距离
+            seg_dx = prev_x - curr_x
+            seg_dy = prev_y - curr_y
+            seg_dist = math.sqrt(seg_dx * seg_dx + seg_dy * seg_dy)
+            
+            # 保持固定间距（CELL_SIZE）
+            if seg_dist > CELL_SIZE:
+                ratio = CELL_SIZE / seg_dist
+                new_x = prev_x - seg_dx * ratio
+                new_y = prev_y - seg_dy * ratio
+                new_smooth_body.append((new_x, new_y))
+            else:
+                new_smooth_body.append((curr_x, curr_y))
+        
+        self.smooth_body = new_smooth_body
+        
+        # 同步更新格子位置（用于碰撞检测）
+        self.body = [Point(int(x // CELL_SIZE), int(y // CELL_SIZE))
+                    for x, y in self.smooth_body]
+    
+    def check_pixel_wall_collision(self):
+        """新手模式：检查是否撞墙（无边界限制）"""
+        # 新手模式无边界限制
+        return False
     
     def queue_direction(self, direction):
         """添加方向到队列（防止高速操作丢指令）"""
@@ -73,6 +155,13 @@ class Snake:
     
     def draw(self, screen):
         """绘制蛇"""
+        if self.beginner_mode and self.smooth_body:
+            self._draw_smooth(screen)
+        else:
+            self._draw_grid(screen)
+    
+    def _draw_grid(self, screen):
+        """格子模式绘制"""
         total = len(self.body)
         for i, block in enumerate(self.body):
             x = block.x * CELL_SIZE
@@ -100,6 +189,48 @@ class Snake:
                     min(255, color[2] + 40),
                 )
                 pygame.draw.rect(screen, hl_color, highlight, border_radius=2)
+    
+    def _draw_smooth(self, screen):
+        """新手模式：平滑绘制"""
+        import math
+        total = len(self.smooth_body)
+        
+        for i, (x, y) in enumerate(self.smooth_body):
+            size = CELL_SIZE // 2 - 1
+            
+            if i == 0:
+                # 蛇头（稍大）
+                pygame.draw.circle(screen, COLORS['SNAKE_HEAD'], (int(x), int(y)), size + 2)
+                # 绘制眼睛
+                self._draw_smooth_eyes(screen, x, y, size)
+            else:
+                # 蛇身（渐暗效果）
+                ratio = max(0.35, 1 - i / total)
+                color = (
+                    int(COLORS['SNAKE_BODY'][0] * ratio),
+                    int(COLORS['SNAKE_BODY'][1] * ratio),
+                    int(COLORS['SNAKE_BODY'][2] * ratio),
+                )
+                pygame.draw.circle(screen, color, (int(x), int(y)), size)
+    
+    def _draw_smooth_eyes(self, screen, x, y, size):
+        """新手模式：绘制眼睛"""
+        d = self.direction
+        es = max(2, CELL_SIZE // 5)
+        offset = size // 2
+        
+        if d.x == 1:    # 右
+            p1, p2 = (x + offset, y - offset), (x + offset, y + offset)
+        elif d.x == -1: # 左
+            p1, p2 = (x - offset, y - offset), (x - offset, y + offset)
+        elif d.y == -1: # 上
+            p1, p2 = (x - offset, y - offset), (x + offset, y - offset)
+        else:           # 下
+            p1, p2 = (x - offset, y + offset), (x + offset, y + offset)
+        
+        for px, py in (p1, p2):
+            pygame.draw.circle(screen, COLORS['SNAKE_EYE'], (int(px), int(py)), es)
+            pygame.draw.circle(screen, COLORS['SNAKE_PUPIL'], (int(px), int(py)), max(1, es // 2))
     
     def _draw_eyes(self, screen, head_rect):
         """绘制眼睛"""
@@ -424,3 +555,138 @@ class ExpBall:
         # 高光
         pygame.draw.circle(screen, COLORS['EXP_BALL_GLOW'],
                           (cx - r // 3, cy - r // 3), max(2, r // 3))
+
+
+class YellowSnake:
+    """黄蛇 - 新手模式敌对蛇，碰到绿蛇身体死亡，变成经验球"""
+    
+    def __init__(self, start_pos=None, length=None):
+        if start_pos is None:
+            # 随机生成位置
+            start_pos = self._random_spawn_pos()
+        
+        if length is None:
+            length = random.randint(YELLOW_SNAKE_CONFIG['min_length'], 
+                                   YELLOW_SNAKE_CONFIG['max_length'])
+        
+        # 初始化平滑位置列表
+        self.smooth_body = []
+        self._init_smooth_body(start_pos, length)
+        self.direction = Point(1, 0)  # 初始向右
+        self.alive = True
+        self._move_timer = 0
+    
+    def _random_spawn_pos(self):
+        """随机生成位置（像素级别）"""
+        game_height = CELL_NUMBER_Y * CELL_SIZE
+        return (
+            random.randint(100, WINDOW_WIDTH - 100),
+            random.randint(100, game_height - 100)
+        )
+    
+    def _init_smooth_body(self, start_pos, length):
+        """初始化平滑位置"""
+        x, y = start_pos
+        self.smooth_body = [(x - i * CELL_SIZE, y) for i in range(length)]
+    
+    def update(self):
+        """更新黄蛇状态，返回是否还存活"""
+        if not self.alive:
+            return False
+        
+        self._move_timer += 1
+        if self._move_timer >= YELLOW_SNAKE_CONFIG['speed'] // 16:  # 根据速度调整
+            self._move_timer = 0
+            self._auto_move()
+        
+        return True
+    
+    def _auto_move(self):
+        """自动移动（简单的随机转向）"""
+        import math
+        head_x, head_y = self.smooth_body[0]
+        
+        # 随机决定是否转向
+        if random.random() < 0.25:
+            # 随机选择一个方向
+            directions = [(0, -1), (0, 1), (-1, 0), (1, 0)]
+            # 排除反向
+            valid_dirs = [d for d in directions 
+                         if not (d[0] == -self.direction.x and d[1] == -self.direction.y)]
+            if valid_dirs:
+                d = random.choice(valid_dirs)
+                self.direction = Point(d[0], d[1])
+        
+        # 移动速度
+        speed = 2
+        new_head_x = head_x + self.direction.x * speed
+        new_head_y = head_y + self.direction.y * speed
+        
+        # 更新平滑位置列表
+        new_smooth_body = [(new_head_x, new_head_y)]
+        for i in range(1, len(self.smooth_body)):
+            prev_x, prev_y = new_smooth_body[i - 1]
+            curr_x, curr_y = self.smooth_body[i]
+            
+            # 计算到前一段的距离
+            seg_dx = prev_x - curr_x
+            seg_dy = prev_y - curr_y
+            seg_dist = math.sqrt(seg_dx * seg_dx + seg_dy * seg_dy)
+            
+            # 保持固定间距
+            if seg_dist > CELL_SIZE:
+                ratio = CELL_SIZE / seg_dist
+                new_x = prev_x - seg_dx * ratio
+                new_y = prev_y - seg_dy * ratio
+                new_smooth_body.append((new_x, new_y))
+            else:
+                new_smooth_body.append((curr_x, curr_y))
+        
+        self.smooth_body = new_smooth_body
+    
+    def check_collision_with_player(self, player_smooth_body):
+        """检查是否与玩家蛇碰撞"""
+        if not self.alive or not self.smooth_body or not player_smooth_body:
+            return False
+        
+        player_head = player_smooth_body[0]
+        
+        # 检查玩家蛇头是否碰到黄蛇身体
+        for seg in self.smooth_body:
+            dx = player_head[0] - seg[0]
+            dy = player_head[1] - seg[1]
+            dist = (dx * dx + dy * dy) ** 0.5
+            if dist < CELL_SIZE:  # 碰撞距离
+                return True
+        return False
+    
+    def get_exp_balls(self):
+        """死亡后变成经验球"""
+        # 返回像素位置的经验球（需要转换）
+        balls = []
+        for x, y in self.smooth_body:
+            # 转换为格子位置
+            grid_x = int(x // CELL_SIZE)
+            grid_y = int(y // CELL_SIZE)
+            balls.append(ExpBall(pos=Point(grid_x, grid_y)))
+        return balls
+    
+    def draw(self, screen):
+        """绘制黄蛇"""
+        total = len(self.smooth_body)
+        
+        for i, (x, y) in enumerate(self.smooth_body):
+            size = CELL_SIZE // 2 - 1
+            
+            if i == 0:
+                # 蛇头（稍大）
+                pygame.draw.circle(screen, COLORS['YELLOW_SNAKE_HEAD'], (int(x), int(y)), size + 2)
+            else:
+                # 蛇身（渐暗效果）
+                ratio = max(0.4, 1 - i / total)
+                color = (
+                    int(COLORS['YELLOW_SNAKE_BODY'][0] * ratio),
+                    int(COLORS['YELLOW_SNAKE_BODY'][1] * ratio),
+                    int(COLORS['YELLOW_SNAKE_BODY'][2] * ratio),
+                )
+                pygame.draw.circle(screen, color, (int(x), int(y)), size)

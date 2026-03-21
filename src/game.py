@@ -3,11 +3,11 @@
 """
 import pygame
 from .config import (
-    SPEED_MAP, BOMB_CONFIG, RED_SNAKE_CONFIG, COLORS,
-    DIFFICULTY_LABELS, DIFFICULTY_COLORS,
-    WINDOW_WIDTH, CELL_SIZE, CELL_NUMBER_Y
+    SPEED_MAP, BOMB_CONFIG, RED_SNAKE_CONFIG, YELLOW_SNAKE_CONFIG, COLORS,
+    DIFFICULTY_LABELS, DIFFICULTY_COLORS, FLASHBANG_CONFIG,
+    WINDOW_WIDTH, WINDOW_HEIGHT, CELL_SIZE, CELL_NUMBER_Y, BEGINNER_CONFIG
 )
-from .entities import Snake, Food, Bomb, RedSnake, ExpBall
+from .entities import Snake, Food, Bomb, RedSnake, ExpBall, YellowSnake
 from .managers import FontManager
 
 
@@ -16,10 +16,11 @@ class Game:
     
     def __init__(self):
         # 游戏实体
-        self.snake = Snake()
+        self.snake = Snake(beginner_mode=False)
         self.food = Food()
         self.bomb = None
         self.red_snake = None      # 红蛇
+        self.yellow_snake = None   # 黄蛇（新手模式）
         self.exp_balls = []        # 经验球列表
         
         # 游戏状态
@@ -30,12 +31,26 @@ class Game:
         self.difficulty = 1
         self.speed = SPEED_MAP[1]
         
+        # 鼠标位置（新手模式用）
+        self._mouse_x = WINDOW_WIDTH // 2
+        self._mouse_y = CELL_NUMBER_Y * CELL_SIZE // 2
+        
         # 计时器
         self._bomb_timer = 0
         self._red_snake_timer = 0  # 红蛇生成计时器
+        self._yellow_snake_timer = 0  # 黄蛇生成计时器
         
         # 动画帧计数
         self._frame = 0
+        
+        # 加速状态（新手模式）
+        self._boost_timer = 0
+        self._is_boosting = False
+        
+        # 闪光弹状态（困难模式）
+        self._flashbang_timer = 0
+        self._flashbang_active = False
+        self._flashbang_frame = 0
         
         # 字体管理器
         self.fonts = FontManager()
@@ -56,31 +71,65 @@ class Game:
         if self.game_over or self.paused:
             return
         
-        self.snake.move()
+        # 更新加速状态
+        self._update_boost()
+        
+        # 新手模式：每帧都移动（跟随鼠标）
+        if self.difficulty == 0:
+            speed = BEGINNER_CONFIG['boost_speed'] if self._is_boosting else BEGINNER_CONFIG['snake_speed']
+            self.snake.move_to_mouse(self._mouse_x, self._mouse_y, speed)
+        else:
+            self.snake.move()
+        
         self._check_collisions()
         self._update_bomb()
         self._update_red_snake()  # 更新红蛇
+        self._update_yellow_snake()  # 更新黄蛇
         self._update_exp_balls()  # 更新经验球
+        self._update_flashbang()  # 更新闪光弹（困难模式）
         self._update_animations()
     
     def _check_collisions(self):
         """检查所有碰撞"""
         # 吃食物
-        if self.snake.check_collision_with(self.food.pos):
-            self.snake.grow()
-            self.score += 1
-            self.high_score = max(self.high_score, self.score)
-            self.food.spawn(self.snake.body)
-            if self.audio:
-                self.audio.play_eat_sound()
+        if self.difficulty == 0:
+            # 新手模式：像素级碰撞检测
+            if self.snake.smooth_body:
+                head_x, head_y = self.snake.smooth_body[0]
+                food_x = self.food.pos.x * CELL_SIZE + CELL_SIZE // 2
+                food_y = self.food.pos.y * CELL_SIZE + CELL_SIZE // 2
+                dist = ((head_x - food_x) ** 2 + (head_y - food_y) ** 2) ** 0.5
+                if dist < CELL_SIZE:
+                    self.snake.grow()
+                    self.score += 1
+                    self.high_score = max(self.high_score, self.score)
+                    self.food.spawn(self.snake.body)
+                    if self.audio:
+                        self.audio.play_eat_sound()
+        else:
+            if self.snake.check_collision_with(self.food.pos):
+                self.snake.grow()
+                self.score += 1
+                self.high_score = max(self.high_score, self.score)
+                self.food.spawn(self.snake.body)
+                if self.audio:
+                    self.audio.play_eat_sound()
         
         # 撞墙或撞自己
-        if self.snake.check_wall_collision() or self.snake.check_self_collision():
-            self._trigger_game_over()
-            return
+        if self.difficulty == 0:
+            # 新手模式：无边界限制，无自撞检测
+            # 但检测黄蛇碰撞
+            if self.yellow_snake and self.yellow_snake.alive:
+                if self.yellow_snake.check_collision_with_player(self.snake.smooth_body):
+                    self._trigger_game_over()
+                    return
+        else:
+            if self.snake.check_wall_collision() or self.snake.check_self_collision():
+                self._trigger_game_over()
+                return
         
-        # 炸弹相关
-        if self.bomb and self.bomb.active:
+        # 炸弹相关（新手模式跳过）
+        if self.difficulty != 0 and self.bomb and self.bomb.active:
             # 直接碰到炸弹
             if self.snake.check_collision_with(self.bomb.pos):
                 self._trigger_game_over()
@@ -92,8 +141,8 @@ class Game:
                     self._trigger_game_over()
                     return
         
-        # 红蛇相关
-        if self.red_snake and self.red_snake.alive:
+        # 红蛇相关（新手模式跳过）
+        if self.difficulty != 0 and self.red_snake and self.red_snake.alive:
             # 绿蛇碰到红蛇
             if self.snake.body[0] in self.red_snake.body:
                 self._trigger_game_over()
@@ -101,17 +150,36 @@ class Game:
         
         # 经验球相关
         for ball in self.exp_balls[:]:
-            if self.snake.check_collision_with(ball.pos):
-                # 吃掉经验球，快速变长（增长3段）
-                for _ in range(3):
-                    self.snake.grow()
-                self.exp_balls.remove(ball)
-                self.score += 1
-                if self.audio:
-                    self.audio.play_eat_sound()
+            if self.difficulty == 0:
+                # 新手模式：像素级碰撞检测
+                if self.snake.smooth_body:
+                    head_x, head_y = self.snake.smooth_body[0]
+                    ball_x = ball.pos.x * CELL_SIZE + CELL_SIZE // 2
+                    ball_y = ball.pos.y * CELL_SIZE + CELL_SIZE // 2
+                    dist = ((head_x - ball_x) ** 2 + (head_y - ball_y) ** 2) ** 0.5
+                    if dist < CELL_SIZE:
+                        for _ in range(3):
+                            self.snake.grow()
+                        self.exp_balls.remove(ball)
+                        self.score += 1
+                        if self.audio:
+                            self.audio.play_eat_sound()
+            else:
+                if self.snake.check_collision_with(ball.pos):
+                    # 吃掉经验球，快速变长（增长3段）
+                    for _ in range(3):
+                        self.snake.grow()
+                    self.exp_balls.remove(ball)
+                    self.score += 1
+                    if self.audio:
+                        self.audio.play_eat_sound()
     
     def _update_bomb(self):
         """更新炸弹逻辑"""
+        # 新手模式不生成炸弹
+        if self.difficulty == 0:
+            return
+        
         # 更新现有炸弹
         if self.bomb:
             alive = self.bomb.update()
@@ -129,6 +197,10 @@ class Game:
     
     def _update_red_snake(self):
         """更新红蛇逻辑"""
+        # 新手模式不生成红蛇
+        if self.difficulty == 0:
+            return
+        
         # 更新现有红蛇
         if self.red_snake and self.red_snake.alive:
             alive = self.red_snake.update(self.snake.body)
@@ -144,12 +216,54 @@ class Game:
                 self._red_snake_timer = 0
                 self.red_snake = RedSnake()
     
+    def _update_yellow_snake(self):
+        """更新黄蛇逻辑（仅新手模式）"""
+        # 只有新手模式生成黄蛇
+        if self.difficulty != 0:
+            return
+        
+        # 更新现有黄蛇
+        if self.yellow_snake and self.yellow_snake.alive:
+            self.yellow_snake.update()
+        
+        # 生成新黄蛇
+        if self.yellow_snake is None:
+            self._yellow_snake_timer += 1
+            if self._yellow_snake_timer >= YELLOW_SNAKE_CONFIG['interval']:
+                self._yellow_snake_timer = 0
+                self.yellow_snake = YellowSnake()
+    
     def _update_exp_balls(self):
         """更新经验球"""
         for ball in self.exp_balls[:]:
             alive = ball.update()
             if not alive:
                 self.exp_balls.remove(ball)
+    
+    def _update_flashbang(self):
+        """更新闪光弹（普通和困难模式）"""
+        # 普通模式(2)和困难模式(3)有闪光弹，新手模式(0)和简单模式(1)没有
+        if self.difficulty not in (2, 3):
+            return
+        
+        # 如果闪光弹正在激活
+        if self._flashbang_active:
+            self._flashbang_frame += 1
+            if self._flashbang_frame >= FLASHBANG_CONFIG['duration']:
+                # 闪光弹结束
+                self._flashbang_active = False
+                self._flashbang_frame = 0
+            return
+        
+        # 计时生成闪光弹
+        self._flashbang_timer += 1
+        if self._flashbang_timer >= FLASHBANG_CONFIG['interval']:
+            self._flashbang_timer = 0
+            self._flashbang_active = True
+            self._flashbang_frame = 0
+            # 播放闪光弹音效
+            if self.audio:
+                self.audio.play_flashbang_sound()
     
     def _update_animations(self):
         """更新动画"""
@@ -164,7 +278,7 @@ class Game:
     
     def set_direction(self, direction):
         """设置蛇的方向"""
-        if not self.game_over and not self.paused:
+        if not self.game_over and not self.paused and self.difficulty != 0:
             self.snake.queue_direction(direction)
     
     def toggle_pause(self):
@@ -179,22 +293,49 @@ class Game:
     
     def set_difficulty(self, level):
         """设置难度"""
-        if 1 <= level <= 3:
+        if 0 <= level <= 3:
             self.difficulty = level
             self.speed = SPEED_MAP[level]
+            # 重新创建蛇（新手模式需要不同的初始化）
+            self.snake = Snake(beginner_mode=(level == 0))
+            self.food.spawn(self.snake.body)
     
     def restart(self):
         """重新开始"""
-        self.snake = Snake()
+        self.snake = Snake(beginner_mode=(self.difficulty == 0))
         self.food.spawn(self.snake.body)
         self.bomb = None
         self.red_snake = None
+        self.yellow_snake = None
         self.exp_balls = []
         self._bomb_timer = 0
         self._red_snake_timer = 0
+        self._yellow_snake_timer = 0
+        # 重置闪光弹状态
+        self._flashbang_timer = 0
+        self._flashbang_active = False
+        self._flashbang_frame = 0
         self.score = 0
         self.game_over = False
         self.paused = False
+    
+    def update_mouse_position(self, x, y):
+        """更新鼠标位置（新手模式用）"""
+        self._mouse_x = x
+        self._mouse_y = y
+    
+    def trigger_boost(self):
+        """触发加速（新手模式双击加速）"""
+        if self.difficulty == 0 and not self.game_over and not self.paused:
+            self._is_boosting = True
+            self._boost_timer = BEGINNER_CONFIG['boost_duration']
+    
+    def _update_boost(self):
+        """更新加速状态"""
+        if self._is_boosting:
+            self._boost_timer -= 1
+            if self._boost_timer <= 0:
+                self._is_boosting = False
     
     # ========== 绘制方法 ==========
     
@@ -208,6 +349,9 @@ class Game:
             self._draw_game_over(screen)
         elif self.paused:
             self._draw_pause(screen)
+        
+        # 绘制闪光弹白屏效果（普通和困难模式）
+        self._draw_flashbang(screen)
     
     def _draw_background(self, screen):
         """绘制背景"""
@@ -235,6 +379,9 @@ class Game:
         # 绘制红蛇
         if self.red_snake and self.red_snake.alive:
             self.red_snake.draw(screen)
+        # 绘制黄蛇（新手模式）
+        if self.yellow_snake and self.yellow_snake.alive:
+            self.yellow_snake.draw(screen)
         self.snake.draw(screen)
     
     def _draw_ui(self, screen):
@@ -278,6 +425,16 @@ class Game:
         self._draw_mini_icon(screen, 540, cy, 'speed', diff_color)
         diff_text = DIFFICULTY_LABELS[self.difficulty]
         self._draw_text(screen, diff_text, f.normal_font, diff_color, (620, cy))
+    
+    def _draw_flashbang(self, screen):
+        """绘制闪光弹白屏效果"""
+        if not self._flashbang_active:
+            return
+        
+        # 白屏覆盖整个游戏区域
+        flash_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        flash_surf.fill((255, 255, 255, 160))  # 白色，半透明（能看到游戏）
+        screen.blit(flash_surf, (0, 0))
     
     def _draw_mini_icon(self, screen, x, y, icon_type, color):
         """绘制迷你图标"""
@@ -356,12 +513,21 @@ class Game:
         # 难度选择区域
         pygame.draw.line(screen, COLORS['BORDER'], (cx - 220, cy + 100), (cx + 220, cy + 100), 1)
         
-        # 难度按钮
-        difficulties = [(1, "简单", COLORS['TITLE']), (2, "普通", (255, 180, 50)), (3, "困难", (255, 80, 80))]
+        # 难度按钮（4个：新手、简单、普通、困难）
+        difficulties = [
+            (0, "新手", DIFFICULTY_COLORS[0]),
+            (1, "简单", DIFFICULTY_COLORS[1]),
+            (2, "普通", DIFFICULTY_COLORS[2]),
+            (3, "困难", DIFFICULTY_COLORS[3])
+        ]
         btn_y = cy + 130
+        btn_width = 80
+        btn_spacing = 100
+        start_x = cx - (len(difficulties) - 1) * btn_spacing // 2
+        
         for level, name, color in difficulties:
-            btn_x = cx - 150 + (level - 1) * 150
-            btn_rect = pygame.Rect(btn_x - 45, btn_y - 18, 90, 36)
+            btn_x = start_x + level * btn_spacing
+            btn_rect = pygame.Rect(btn_x - btn_width // 2, btn_y - 18, btn_width, 36)
             
             # 选中状态
             if self.difficulty == level:
@@ -376,19 +542,19 @@ class Game:
                 pygame.draw.rect(screen, COLORS['DIM'], btn_rect, 1, border_radius=8)
                 text_color = COLORS['DIM']
             
-            self._draw_text(screen, f"{level} {name}", f.small_font, text_color, (btn_x, btn_y))
+            self._draw_text(screen, name, f.small_font, text_color, (btn_x, btn_y))
         
         # 左右箭头指示
         arrow_y = btn_y
-        # 左箭头（如果当前难度 > 1）
-        if self.difficulty > 1:
-            left_x = cx - 150 - 60
+        # 左箭头（如果当前难度 > 0）
+        if self.difficulty > 0:
+            left_x = start_x - 50
             pygame.draw.polygon(screen, COLORS['DIM'], [
                 (left_x - 8, arrow_y), (left_x + 8, arrow_y - 10), (left_x + 8, arrow_y + 10)
             ])
         # 右箭头（如果当前难度 < 3）
         if self.difficulty < 3:
-            right_x = cx + 150 + 60
+            right_x = start_x + 3 * btn_spacing + 50
             pygame.draw.polygon(screen, COLORS['DIM'], [
                 (right_x + 8, arrow_y), (right_x - 8, arrow_y - 10), (right_x - 8, arrow_y + 10)
             ])
