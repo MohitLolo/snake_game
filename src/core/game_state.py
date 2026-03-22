@@ -2,7 +2,7 @@
 游戏状态管理
 集中管理所有游戏状态变量
 """
-from ..config import SPEED_MAP, BEGINNER_CONFIG
+from ..config import SPEED_MAP, BEGINNER_CONFIG, BLUE_FOOD_CONFIG
 
 
 class GameState:
@@ -37,6 +37,11 @@ class GameState:
         self.bomb_timer = 0
         self.red_snake_timer = 0
         self.yellow_snake_timer = 0
+        
+        # 蓝色食物（无敌道具）
+        self.blue_food_timer = 0
+        self.invincible_timer = 0
+        self.is_invincible = False
     
     def reset(self, difficulty):
         """重置游戏状态"""
@@ -60,6 +65,11 @@ class GameState:
         self.bomb_timer = 0
         self.red_snake_timer = 0
         self.yellow_snake_timer = 0
+        
+        # 重置蓝色食物和无敌状态
+        self.blue_food_timer = 0
+        self.invincible_timer = 0
+        self.is_invincible = False
     
     def update_frame(self):
         """更新帧计数"""
@@ -71,6 +81,18 @@ class GameState:
             self.boost_timer -= 1
             if self.boost_timer <= 0:
                 self.is_boosting = False
+    
+    def update_invincible(self):
+        """更新无敌状态"""
+        if self.is_invincible:
+            self.invincible_timer -= 1
+            if self.invincible_timer <= 0:
+                self.is_invincible = False
+    
+    def trigger_invincible(self):
+        """触发无敌状态"""
+        self.is_invincible = True
+        self.invincible_timer = BLUE_FOOD_CONFIG['duration']
     
     def trigger_boost(self):
         """触发加速"""

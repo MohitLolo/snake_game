@@ -36,6 +36,19 @@ conda activate ./env
 python main.py
 ```
 
+## 打包
+```bash
+# 标准打包（推荐）
+python build.py
+
+# 单文件版本（体积更大，但只有一个文件）
+python build.py --onefile
+
+# 清理构建文件
+python build.py --clean
+```
+
+
 ## 操作说明
 
 | 场景 | 按键 | 功能 |

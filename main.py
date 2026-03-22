@@ -185,11 +185,10 @@ class GameApp:
         if not self.started or self.game.game_over or self.game.paused:
             return
         
-        # 新手模式：每帧更新（跟随鼠标）
+        # 新手模式：更新鼠标位置（update由定时器触发）
         if self.game.difficulty == 0:
             mouse_x, mouse_y = pygame.mouse.get_pos()
             self.game.update_mouse_position(mouse_x, mouse_y)
-            self.game.update()  # 新手模式每帧更新
             return
         
         keys = pygame.key.get_pressed()

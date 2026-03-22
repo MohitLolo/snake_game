@@ -3,9 +3,9 @@
 管理炸弹、红蛇、黄蛇、经验球等实体的生成和更新
 """
 from ..config import (
-    BOMB_CONFIG, RED_SNAKE_CONFIG, YELLOW_SNAKE_CONFIG, FLASHBANG_CONFIG
+    BOMB_CONFIG, RED_SNAKE_CONFIG, YELLOW_SNAKE_CONFIG, FLASHBANG_CONFIG, BLUE_FOOD_CONFIG
 )
-from ..entities import Bomb, RedSnake, YellowSnake
+from ..entities import Bomb, RedSnake, YellowSnake, BlueFood
 
 
 class EntitySpawner:
@@ -17,6 +17,7 @@ class EntitySpawner:
         self.red_snake = None
         self.yellow_snake = None
         self.exp_balls = []
+        self.blue_food = None
     
     def reset(self):
         """重置所有实体"""
@@ -24,12 +25,14 @@ class EntitySpawner:
         self.red_snake = None
         self.yellow_snake = None
         self.exp_balls = []
+        self.blue_food = None
     
     def update(self, snake_body, food_pos, audio=None):
         """更新所有实体"""
         self._update_bomb(snake_body, food_pos)
         self._update_red_snake()
         self._update_yellow_snake()
+        self._update_blue_food(snake_body, food_pos)
         self._update_exp_balls()
         self._update_flashbang(audio)
     
@@ -79,8 +82,13 @@ class EntitySpawner:
             return
         
         # 更新现有黄蛇
-        if self.yellow_snake and self.yellow_snake.alive:
-            self.yellow_snake.update()
+        if self.yellow_snake:
+            if self.yellow_snake.alive:
+                self.yellow_snake.update()
+            else:
+                # 黄蛇死亡，生成经验球
+                self.exp_balls.extend(self.yellow_snake.get_exp_balls())
+                self.yellow_snake = None
         
         # 生成新黄蛇
         if self.yellow_snake is None:
@@ -95,6 +103,25 @@ class EntitySpawner:
             alive = ball.update()
             if not alive:
                 self.exp_balls.remove(ball)
+    
+    def _update_blue_food(self, snake_body, food_pos):
+        """更新蓝色食物（无敌道具）"""
+        # 更新现有蓝色食物动画
+        if self.blue_food and self.blue_food.active:
+            self.blue_food.update()
+        
+        # 无敌状态下不生成新的蓝色食物
+        if self.state.is_invincible:
+            return
+        
+        # 生成新蓝色食物
+        if self.blue_food is None or not self.blue_food.active:
+            self.state.blue_food_timer += 1
+            if self.state.blue_food_timer >= BLUE_FOOD_CONFIG['interval']:
+                self.state.blue_food_timer = 0
+                self.blue_food = BlueFood()
+                exclude = list(snake_body) + [food_pos]
+                self.blue_food.spawn(exclude)
     
     def _update_flashbang(self, audio):
         """更新闪光弹"""

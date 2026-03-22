@@ -42,18 +42,19 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='贪吃蛇',
+    name='SnakeGame',  # 使用英文名减少误报
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,  # 禁用 UPX 压缩，减少误报
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # 不显示控制台窗口
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon='assets/icon.ico' if os.path.exists('assets/icon.ico') else None,
+    version='version.txt',  # 添加版本信息
 )

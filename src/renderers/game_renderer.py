@@ -4,16 +4,16 @@
 """
 import pygame
 from .base import BaseRenderer
-from ..config import COLORS, WINDOW_WIDTH, CELL_SIZE, CELL_NUMBER_Y
+from ..config import COLORS, WINDOW_WIDTH, WINDOW_HEIGHT, CELL_SIZE, CELL_NUMBER_Y
 
 
 class GameRenderer(BaseRenderer):
     """游戏画面渲染器"""
     
-    def draw(self, screen, snake, food, spawner):
+    def draw(self, screen, snake, food, spawner, is_invincible=False):
         """绘制游戏画面"""
         self._draw_background(screen)
-        self._draw_entities(screen, snake, food, spawner)
+        self._draw_entities(screen, snake, food, spawner, is_invincible)
     
     def _draw_background(self, screen):
         """绘制背景"""
@@ -30,10 +30,14 @@ class GameRenderer(BaseRenderer):
         pygame.draw.rect(screen, COLORS['BORDER'],
                         pygame.Rect(0, 0, WINDOW_WIDTH, game_h), 2)
     
-    def _draw_entities(self, screen, snake, food, spawner):
+    def _draw_entities(self, screen, snake, food, spawner, is_invincible=False):
         """绘制游戏实体"""
         # 食物
         food.draw(screen)
+        
+        # 蓝色食物（无敌道具）
+        if spawner.blue_food and spawner.blue_food.active:
+            spawner.blue_food.draw(screen)
         
         # 炸弹
         if spawner.bomb:
@@ -43,12 +47,12 @@ class GameRenderer(BaseRenderer):
         for ball in spawner.exp_balls:
             ball.draw(screen)
         
-        # 红蛇
-        if spawner.red_snake and spawner.red_snake.alive:
+        # 红蛇（无敌状态下不绘制）
+        if spawner.red_snake and spawner.red_snake.alive and not is_invincible:
             spawner.red_snake.draw(screen)
         
-        # 黄蛇
-        if spawner.yellow_snake and spawner.yellow_snake.alive:
+        # 黄蛇（无敌状态下不绘制）
+        if spawner.yellow_snake and spawner.yellow_snake.alive and not is_invincible:
             spawner.yellow_snake.draw(screen)
         
         # 玩家蛇

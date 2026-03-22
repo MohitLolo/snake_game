@@ -36,6 +36,9 @@ YELLOW_SNAKE_CONFIG = _cfg['yellow_snake']
 # ========== 炸弹配置 ==========
 BOMB_CONFIG = _cfg['bomb']
 
+# ========== 蓝色食物配置 ==========
+BLUE_FOOD_CONFIG = _cfg['blue_food']
+
 # ========== 红蛇配置 ==========
 RED_SNAKE_CONFIG = _cfg['red_snake']
 

@@ -18,7 +18,7 @@ speed_map:
 # ========== 闪光弹配置 ==========
 flashbang:
   interval: 480    # 生成间隔 (帧数, 60fps * 10秒)
-  duration: 60     # 白屏持续时间 (帧数, 60fps * 3秒)
+  duration: 160     # 白屏持续时间 (帧数, 60fps * 3秒)
 
 # ========== 新手模式配置 ==========
 beginner:
@@ -41,6 +41,11 @@ bomb:
   interval: 180           # 生成间隔 (帧数)
   explosion_radius: 1     # 爆炸范围 (格数)
   explosion_duration: 20  # 爆炸动画持续时间 (帧数)
+
+# ========== 蓝色食物（无敌道具）配置 ==========
+blue_food:
+  interval: 180        # 生成间隔 (帧数, 约3秒)
+  duration: 1200       # 持续时间 (帧数, 20秒)
 
 # ========== 红蛇配置 ==========
 red_snake:
@@ -89,6 +94,10 @@ colors:
   # 经验球
   EXP_BALL: [255, 215, 0]
   EXP_BALL_GLOW: [255, 255, 150]
+  
+  # 蓝色食物（无敌道具）
+  BLUE_FOOD: [80, 150, 255]
+  BLUE_FOOD_GLOW: [150, 200, 255]
   
   # UI
   TITLE: [80, 200, 130]
